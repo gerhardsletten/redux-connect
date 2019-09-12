@@ -1,41 +1,15 @@
+/* eslint-disable react/forbid-prop-types,react/no-unused-prop-types,react/require-default-props */
 import React, { Component } from 'react';
 import PropTypes from 'prop-types';
 import { Route } from 'react-router';
 import { renderRoutes } from 'react-router-config';
+import { ReactReduxContext } from 'react-redux';
 import { loadAsyncConnect } from '../helpers/utils';
 import { getMutableState } from '../helpers/state';
 
 export class AsyncConnect extends Component {
-  static propTypes = {
-    render: PropTypes.func,
-    beginGlobalLoad: PropTypes.func.isRequired,
-    endGlobalLoad: PropTypes.func.isRequired,
-    reloadOnPropsChange: PropTypes.func,
-    /* eslint-disable react/forbid-prop-types, react/no-unused-prop-types */
-    routes: PropTypes.array.isRequired,
-    location: PropTypes.object.isRequired,
-    match: PropTypes.object.isRequired,
-    helpers: PropTypes.any,
-    /* eslint-enable */
-  };
-
-  static contextTypes = {
-    store: PropTypes.object.isRequired, // eslint-disable-line react/forbid-prop-types
-  };
-
-  static defaultProps = {
-    helpers: {},
-    reloadOnPropsChange() {
-      return true;
-    },
-    render({ routes }) {
-      return renderRoutes(routes);
-    },
-  };
-
-  constructor(props, context) {
-    super(props, context);
-
+  constructor(props) {
+    super(props);
     this.state = {
       previousLocation: this.isLoaded() ? null : props.location,
     };
@@ -54,7 +28,8 @@ export class AsyncConnect extends Component {
     }
   }
 
-  componentWillReceiveProps(nextProps) {
+  // eslint-disable-next-line camelcase
+  UNSAFE_componentWillReceiveProps(nextProps) {
     const { location, reloadOnPropsChange } = this.props;
     const navigated = location !== nextProps.location;
 
@@ -69,26 +44,31 @@ export class AsyncConnect extends Component {
   }
 
   isLoaded() {
-    const { store } = this.context;
-    return getMutableState(store.getState()).reduxAsyncConnect.loaded;
+    const { reduxConnectStore } = this.props;
+    return getMutableState(reduxConnectStore.getState()).reduxAsyncConnect.loaded;
   }
 
-  loadAsyncData(props) {
-    const { store } = this.context;
+  loadAsyncData({ reduxConnectStore, ...otherProps }) {
     const { location, beginGlobalLoad, endGlobalLoad } = this.props;
-    const loadResult = loadAsyncConnect({ ...props, store });
+    const loadResult = loadAsyncConnect({
+      ...otherProps,
+      store: reduxConnectStore,
+    });
 
     this.setState({ previousLocation: location });
 
     // TODO: think of a better solution to a problem?
     this.loadDataCounter += 1;
     beginGlobalLoad();
-    return (loadDataCounterOriginal => loadResult.then(() => {
+    return ((loadDataCounterOriginal) => loadResult.then(() => {
       // We need to change propsToShow only if loadAsyncData that called this promise
       // is the last invocation of loadAsyncData method. Otherwise we can face a situation
       // when user is changing route several times and we finally show him route that has
       // loaded props last time and not the last called route
-      if (this.loadDataCounter === loadDataCounterOriginal && this.mounted !== false) {
+      if (
+        this.loadDataCounter === loadDataCounterOriginal
+        && this.mounted !== false
+      ) {
         this.setState({ previousLocation: null });
       }
 
@@ -111,4 +91,49 @@ export class AsyncConnect extends Component {
   }
 }
 
-export default AsyncConnect;
+AsyncConnect.propTypes = {
+  render: PropTypes.func,
+  beginGlobalLoad: PropTypes.func.isRequired,
+  endGlobalLoad: PropTypes.func.isRequired,
+  reloadOnPropsChange: PropTypes.func,
+  routes: PropTypes.array.isRequired,
+  location: PropTypes.object.isRequired,
+  match: PropTypes.object.isRequired,
+  helpers: PropTypes.any,
+  reduxConnectStore: PropTypes.object.isRequired,
+};
+
+AsyncConnect.defaultProps = {
+  helpers: {},
+  reloadOnPropsChange() {
+    return true;
+  },
+  render({ routes }) {
+    return renderRoutes(routes);
+  },
+};
+
+const AsyncConnectWithContext = ({ context, ...otherProps }) => {
+  const Context = context || ReactReduxContext;
+
+  if (Context == null) {
+    throw new Error('Please upgrade to react-redux v6');
+  }
+
+  return (
+    <Context.Consumer>
+      {({ store: reduxConnectStore }) => (
+        <AsyncConnect
+          reduxConnectStore={reduxConnectStore}
+          {...otherProps}
+        />
+      )}
+    </Context.Consumer>
+  );
+};
+
+AsyncConnectWithContext.propTypes = {
+  context: PropTypes.object,
+};
+
+export default AsyncConnectWithContext;
